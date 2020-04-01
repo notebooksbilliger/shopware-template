@@ -1,46 +1,87 @@
-#override defaults for dev
 version: "3.7"
 
+networks:
+    app-network:
+        driver: bridge
+
 services:
-  app_server:
-    image: shopware-production:local
-    build: .
-    depends_on:
-      - mysql
-      - elasticsearch
-    ports:
-      - 8000:8000
-      - 8005:8000
-    extra_hosts:
-      - "docker.vm:127.0.0.1"
-    environment:
-      # define yourself
-      #- DATABASE_URL
-      - APP_URL=http://docker.vm:8000
-      - INSTANCE_ID=
-      - SHOPWARE_ES_ENABLED=1
-      - SHOPWARE_ES_HOSTS=elasticsearch:9200
-      - SHOPWARE_ES_INDEXING_ENABLED=1
-      - SHOPWARE_ES_INDEX_PREFIX=sw
-      - SHOPWARE_CDN_STRATEGY_DEFAULT=id
-    volumes:
-      - "./config/jwt:/sw6/config/jwt"
-      - "./public/bundles:/sw6/public/bundles"
-      - "./public/media:/sw6/public/media"
-      - "./public/sitemap:/sw6/public/sitemap"
-      - "./public/theme:/sw6/public/theme"
-      - "./public/thumbnail:/sw6/public/thumbnail"
-      - "./var:/sw6/var"
+    app:
+        image: ${DOCKER_REPOSITORY_HOST}/${COMPOSE_PROJECT_NAME}-app:${APP_VERSION}
+        container_name: ${COMPOSE_PROJECT_NAME}-app-${APP_VERSION}
+        build:
+            context: .
+            dockerfile: ./devops/php/app/Dockerfile
+            args:
+                NEWRELIC_VERSION: ${NEWRELIC_VERSION}
+                JWT_PRIVATE_KEY_PASSPHRASE: ${JWT_PRIVATE_KEY_PASSPHRASE}
+        environment:
+            APP_ENV: ${APP_ENV}
+            APP_SECRET: ${APP_SECRET}
+            APP_URL: ${APP_URL}
+            APP_VERSION: ${APP_VERSION}
+            DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:3306/${DB_NAME}
+            DB_HOST: ${DB_HOST}
+            DB_MIGRATIONS_USER: ${DB_MIGRATIONS_USER}
+            DB_MIGRATIONS_PASSWORD: ${DB_MIGRATIONS_PASSWORD}
+            DB_NAME: ${DB_NAME}
+            DB_PASSWORD: ${DB_PASSWORD}
+            DB_USER: ${DB_USER}
+            INSTANCE_ID: ${INSTANCE_ID}
+            JWT_PRIVATE_KEY_PASSPHRASE: ${JWT_PRIVATE_KEY_PASSPHRASE}
+            MAILER_URL: ${MAILER_URL}
+            NEWRELIC_APP_NAME: ${NEWRELIC_APP_NAME}
+            NEWRELIC_ENABLED: ${NEWRELIC_ENABLED}
+            NEWRELIC_LICENSE: ${NEWRELIC_LICENSE}
+            REDIS_HOST: ${REDIS_HOST}
+            SHOPWARE_CDN_STRATEGY_DEFAULT: ${SHOPWARE_CDN_STRATEGY_DEFAULT}
+            SHOPWARE_ES_HOSTS: ${SHOPWARE_ES_HOSTS}
+            SHOPWARE_ES_ENABLED: ${SHOPWARE_ES_ENABLED}
+            SHOPWARE_ES_INDEXING_ENABLED: ${SHOPWARE_ES_INDEXING_ENABLED}
+            SHOPWARE_ES_INDEX_PREFIX: ${SHOPWARE_ES_INDEX_PREFIX}
+            SHOPWARE_HTTP_CACHE_ENABLED: ${SHOPWARE_HTTP_CACHE_ENABLED}
+            SHOPWARE_HTTP_DEFAULT_TTL: ${SHOPWARE_HTTP_DEFAULT_TTL}
+        networks:
+            - app-network
+        ports:
+            - ${HOST_APP_HTTP_PORT}:80
+        depends_on:
+            - mysql
+            - es
+            - redis
+        links:
+            - mysql:${DB_HOST}
+            - es:${ES_HOST}
+            - redis:${REDIS_HOST}
 
-  mysql:
-    image: mysql:5.7
-    tmpfs:
-      - /var/lib/mysql:uid=999,gid=999
-    environment:
-      - MYSQL_ROOT_PASSWORD=root
+    mysql:
+        image: ${COMPOSE_PROJECT_NAME}-mysql:${APP_VERSION}
+        container_name: ${COMPOSE_PROJECT_NAME}-mysql-${APP_VERSION}
+        build:
+            context: ./devops/mysql/
+        networks:
+            - app-network
+        environment:
+            MYSQL_ROOT_PASSWORD: ${DB_MIGRATIONS_PASSWORD}
+            MYSQL_USER: ${DB_USER}
+            MYSQL_PASSWORD: ${DB_PASSWORD}
+            MYSQL_DATABASE: ${DB_NAME}
+        extra_hosts:
+            - "${DB_HOST}:127.0.0.1"
 
-  elasticsearch:
-    image: elastic/elasticsearch:7.1.1
-    environment:
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-      - discovery.type=single-node
+    es:
+        image: ${COMPOSE_PROJECT_NAME}-es:${APP_VERSION}
+        container_name: ${COMPOSE_PROJECT_NAME}-es-${APP_VERSION}
+        build:
+            context: ./devops/es
+        networks:
+            - app-network
+        environment:
+            TERM: xterm
+            ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+            discovery.type: "single-node"
+
+    redis:
+        image: redis:5.0.7-alpine
+        container_name: ${COMPOSE_PROJECT_NAME}-redis-${APP_VERSION}
+        networks:
+            - app-network

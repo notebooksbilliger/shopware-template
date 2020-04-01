@@ -71,24 +71,6 @@
             "styleFiles": []
         }
     },
-    "Profiling": {
-        "basePath": "vendor\/shopware\/core\/Profiling\/",
-        "views": [
-            "Resources\/views"
-        ],
-        "technicalName": "profiling",
-        "administration": {
-            "path": "Resources\/app\/administration\/src",
-            "entryFilePath": null,
-            "webpack": null
-        },
-        "storefront": {
-            "path": "Resources\/app\/storefront\/src",
-            "entryFilePath": null,
-            "webpack": null,
-            "styleFiles": []
-        }
-    },
     "Administration": {
         "basePath": "vendor\/shopware\/administration\/",
         "views": [
@@ -123,7 +105,7 @@
             "entryFilePath": "Resources\/app\/storefront\/src\/main.js",
             "webpack": null,
             "styleFiles": [
-                "vendor\/shopware\/storefront\/Resources\/app\/storefront\/src\/scss\/base.scss",
+                "\/app\/vendor\/shopware\/storefront\/Resources\/app\/storefront\/src\/scss\/base.scss",
                 "@Plugins"
             ]
         }

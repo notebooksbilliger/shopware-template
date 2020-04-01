@@ -1,0 +1,40 @@
+version: '3.7'
+
+volumes:
+    app-vendor:
+    app-jwt:
+
+services:
+    app:
+        volumes:
+            # for development purposes, you wanna mount code, so that you can change it on the fly
+            # but still, ensure that Opcache settings do not cache project forever
+            - ./:/app
+            - ./devops/php/app/configs/${APP_ENV}/php.ini:/usr/local/etc/php/conf.d/zzzzz-php.ini
+            # this volume is necessary to make vendor dir performing.
+            # thing is that we mount ./:/app, which causes performance problems. Alternative is docker-sync,
+            # but it requires additional install plugin on host
+            - app-vendor:/app/vendor
+            # this volume is needed because of mounted "./:/app", but we want to keep app-jwt, which is already
+            # inside the container (same as it will be on ECS or so)
+            - app-jwt:/app/config/jwt
+        ports:
+            - ${HOST_APP_HTTP_PORT}:80
+        tmpfs:
+            - /app/var/cache:size=500M
+            - /app/var/log:size=500M
+            - /app/var/queue
+        environment:
+            APP_DEBUG: ${APP_DEBUG}
+
+    mysql:
+        volumes:
+            - ./var/data/mysql:/var/lib/mysql:Z
+
+    es:
+        volumes:
+            - ./var/data/es:/usr/share/elasticsearch/data:Z
+
+    redis:
+        volumes:
+            - ./var/data/redis:/data:Z

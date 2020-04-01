@@ -1,140 +1,160 @@
-# Shopware 6 production template
-
-This repository contains the production template that enables you to build,
-package and deploy Shopware 6 to production shops. This template is also used
-to build the official packages distributed by shopware at [https://www.shopware.com/en/download](https://www.shopware.com/en/download).
-
-This template is optimized for production usage and contains basic development tooling. 
-It's intended as a basis for project customizations, which are usually done by agencies.
-
-If you want to contribute to the [Shopware Platform](https://github.com/shopware/platform) or develop store plugins, 
-you should use the [development template](https://github.com/shopware/development).
-
-## Branches and stability
-
-In each commit a composer.lock is contained to ensure that the version being
-deployed is the version that was tested in our CI. We currently provide two
-branches:
-- `6.1`: stable patch releases (`v6.1.0-rc2`, `v6.1.0`, `v6.1.19`, `v6.1.*`, but not `v6.2.0`)
-- `master`: stable minor+patch releases (`v6.1.3`, `v6.1.15`, `v6.2.0`, `v6.3.0`...)
-
-The `6.1` branch contains all the 6.1 releases. It's stable now and only gets non-breaking bug fixes. (security issues are an exception).
-
-The `master` branch contains the newest stable minor release. That may result in plugins being incompatible, so be careful.
-
-## Requirements
-
-See [https://docs.shopware.com/en/shopware-platform-dev-en/getting-started/requirements](https://docs.shopware.com/en/shopware-platform-dev-en/getting-started/requirements)
-
-NPM and Node are only required during the build process and for development. If you dont have javascript customizations, it's not required at all. Because the storefront and admin are pre-build.
-
-If you are using a separate build server, consider having NPM and Node as build-only requirements. Your operating application server doesn't require any of these to run Shopware 6.
-
-## Setup and install
-
-To setup the environment and install with a basic setup run the following commands:
-
-```bash
-# clone newest 6.1 patch version from github 
-git clone --branch=6.1 https://github.com/shopware/production shopware
-cd shopware
-
-# install shopware and dependencies according to the composer.lock 
-composer install
-
-# setup the environment
-bin/console system:setup
-# or create .env yourself, if you need more control
-# create jwt secret: bin/console system:generate-jwt-secret
-# create app secret: APP_SECRET=$(bin/console system:generate-app-secret)
-# create .env
-
-# create database with a basic setup (admin user and storefront sales channel)
-bin/console system:install --create-database --basic-setup
-
-# or use the interactive installer in the browser: /recovery/install/index.php
-```
-
-## Update
-
-To update Shopware 6 just run this:
-
-```bash
-# pull newest changes from origin
-git pull origin
-
-# the (pre|post)-(install|update)-cmd will execute all steps automatically
-composer install
-```
-
-# Customization
-
+# 1. Description
 This project is called production template because it can be used to 
 create project specific configurations. The template provides a basic setup
-that is equivalent to the official distribution. If you need customization,
+that is equivalent to the official distribution. If you need customization
 the workflow could look like this:
-* Fork template
-* Make customization
+* Fork template*. [How to work with forks and keep them uprodate](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/syncing-a-fork)
+* Make customization (php.ini, apache config)
 * Add dependencies
-* Add project specific plugins
-* Update var/plugins.json (bin/console bundle:dump, paths need to be relative to the project root)
-* Build administration/storefront
+* Add custom or external plugins
 * Update composer.json and composer.lock
 * Commit changes
 
-## Development
+## *Fork warning
+This template includes both project configuration and dockerfiles. It also includes composer.lock and composer.json files.
+It means that at some point fork might differ quite a lot from the original project. In this case, you need to sync fork carefully and 
+think about remove upstream from the project, because projects which differ a lot makes no sense to keep in sync.
 
-### Command overview
+## Template already contains:
+* docker-compose.yml, dockerfiles ready for being used on dev/staging/prod , for tiny setup you can use ./docker-compose.override.yml and of course you will have to adjust php.ini/apache config files
+* runner (./bin/run.sh) to launch on a `host machine` to start stack and manipulate it. [Launcher for host machine](./bin/README.md) (./bin/README.md)
+* runtime helper for execution inside container to help with main shopware commands, e.g clean cache/build/upgrade/migrations... [Images, shopware runtime helper](./devops/README.md) (./devops/README.md)
 
-The following commands and scripts are available
+To start with project, you need to fork it and/or copy paste this template, so that you can adjust it for your needs, then: 
 
-**Setup/Install/Deployment**
+## Docker images usage
 
-|Command|Description|
-|---|---|
-| `bin/console system:setup` | Configure and create .env and optionally create jwt secret |
-| `bin/console system:generate-jwt-secret` | Generates a new jwt secret |
-| `bin/console system:generate-app-secret` | Outputs a new app secret. This does not update your .env! |
-| `bin/console system:install` | Setup database and optional install some basic data |
-| `bin/console system:update-prepare` | Run update preparations before the update. Do not update if this fails |
-| `bin/console system:update-finish` | Executes the migrations and finishes the update |
-| `bin/console theme:change` | Assign theme to a sales channel |
+Produced docker image must contain all the necessary things to be able to start an application fast.
+
+Ideally, when during container statup, there is NO any need to mount anything from host FS or from shared FS. 
+By this you unlock possibility to scale up/down very quickly without take care about potentially
+slow mounted folders. 
+
+Imagine, that the whole host might be gone in a second and within this time interval you must send last 
+responses to customers and shut down application and guarantee that after same customer hit another server
+again, customer data will already be there. This state is possible to achieve only when all the storages provided 
+as external services, e.g S3, RDS, Redis, so on.
+
+Thereby, you have to:
+ - avoid as much as possible mounting of FS from host into container,
+ - avoid as much as possible store in container memory/internal FS/ internal caches state of the application, which can affect on business logic
+ - ensure that your logs are forwarded to stdout, collected on host (e.g with filebeat) and forwarded to external storages (e.g ELK).
+
+# 2. Quick start guide
+
+## 2.0 Initial requirements/preparations:
+You need:
+* docker
+* docker-compose
+* to be able to contribute, also needed basic knowledge about docker containers, images. And be able to differentiate docker runtime vs build environments
+
+For development environment, see [./docker-compose.override.yml.dist](./docker-compose.override.yml.dist) file. You can copy it into ./docker-compose.override.yml and make your changes there.
+But this you can make mount of local FS into running container, so on.
+
+## 2.1 Start the stack
+
+This commands you execute on host machine. First start takes time, so you have some time for a cup of coffee.
+
+```bash
+# start building stack
+./bin/run.sh
+
+# refer to help to see other options from runner (also help is shown on stack startup)
+./bin/run.sh help
+
+# see runtime helper (as you see, 'shopware help' executed inside running container)
+docker-compose exec app shopware help
+```
+
+## 2.2 Discover shopware
+* demo shop: http://localhost/
+* admin area: http://localhost/admin#/ (user: admin, password:shopware)
+
+## 2.3 Shopware during runtime / development
+Basically, shopware is a symfony application, which is have quite big overhead with CMS to make it an e-commerce ready shop.
+
+> Most of the symfony related things will work perfectly there, BUT remember, that originally vendor has removed doctrine from the core.
+
+To be able to operate with migrations, so on and for backwards compatibility with some our extensions, I have added again doctrine, so that
+standard symfony Migrations bundle can be used, so on. Doctrine also available as a service (as usual).
+
+To make life simpler and to avoid mistakes, was added shopware runtime helper, which you can
+use on dev, CI/CD and on prod, see [Images, shopware runtime helper](./devops/README.md) (./devops/README.md)
 
 
-**Build**
+## 3. Plugins
 
-*bash is required for the shell scripts* 
+See https://docs.shopware.com/en/shopware-platform-dev-en/internals/plugins/plugin-commands?category=shopware-platform-dev-en/internals/plugins 
 
-|Command|Description|
-|---|---|
-| `bin/console theme:compile` | Compile all assigned themes |
-| `bin/build.sh` | Complete build including composer install|
-| `bin/build-js.sh` | Build administration and storefront, including all plugins in `var/plugins.json`.|
-| `bin/build-administration.sh` | Just build the administration. |
-| `bin/build-storefront.sh` | Just build the storefront. You need to have built the administration once. |
+### 3.1 Install
 
+All plugins defined in `plugins.json` should be installed automatically during `shopware build` command.
 
-**Dev**
+Alternatively, it's possible to install each Shopware plugin individually with the following commands:
+- refresh the list of plugins please launch:
+    ```bash
+    bin/console plugin:refresh
+    ```
 
-Run `bin/build-js.sh` once to install the npm dependencies. 
+- install and activate plugin
+    ```bash
+    bin/console plugin:install --activate YourFavouritePluginName
+    ```
 
-*bash is required for the shell scripts* 
+If there are any further actions required they should be described in plugin's README.
 
-|Command|Description|
-|---|---|
-| `bin/console theme:refresh` | Reload theme.json of active themes |
-| `bin/watch-administration.sh` | Watcher for administration changes, recompile and reload page if required  |
-| `bin/watch-storefront.sh` | Watcher for storefront changes, recompile and reload page if required  |
+### 3.2 Apply migrations
+to be sure, that all the things are working fine, ensure that you did applied the migrations:
+```bash
+./bin/console database:migrate --all
+```
 
-## Configuration
+### 3.3 Rebuild an image
+And at the end, to be sure, that during next run you will get same state of the container,
+trigger images rebuild:
+```bash
+./bin/run.sh build
 
-See also [config/README.md](config/README.md)
+#or call it without any parameters, so that stack also will be restarted:
+./bin/run.sh
+```
 
-### Template overview
+# 4. Plugins migrations
+
+This migrations are used to prepare shop for the plugin usage.
+
+This migrations must guarantee that after you do a plugin setup, you will always get working environment.
+
+see for more details: https://docs.shopware.com/en/shopware-platform-dev-en/getting-started/indepth-guide-bundle/database?category=shopware-platform-dev-en/getting-started/indepth-guide-bundle
+
+## 4.3 Apply all migrations (post deploy) 
+
+This command can be used from CI/CD as post deploy. You also need it on the local to ensure that stack is uptodate.
+This command called automatically when you start on local your stack, but if you do some changes\install or update plugins, so on, you might want to 
+execute it manually as well.
+```bash
+docker-compose exec app shopware apply-migrations
+```
+
+# 5. Upgrade
+
+For this purpose you have a command in shopware helper.
+Before you run it, ensure that you use `./docker-compose.override.yml` file and mount project files into container, otherwise all
+the changes will be gone after you kill running container.
+```bash
+docker-compose exec app shopware upgrade
+```
+This command will update local FS (see remark about docker-compose.yml). Then you need to requild container again
+
+# 6. Template overview
 
 This directory tree should give an overview of the template structure.
 
 ```txt
+├── .env                  # build and runtime configuration for the stack. Under gitignore
+├── .env.dist             # example of the .env file with default values. Ready for usage on dev env
+├── .gitignore            # NEVER put here your dev env spesific files, like `.DS_Store` so on (use for it global one).
+├── .dockerignore         # A list of files/folder, which will be IGNORED during ADD/COPY commands call from Dockerfile on image creation.
 ├── bin/                  # binaries to setup, build and run symfony console commands 
 ├── composer.json         # defines dependencies and setups autoloading
 ├── composer.lock         # pins all dependencies to allow for reproducible installs
@@ -143,108 +163,51 @@ This directory tree should give an overview of the template structure.
 │   ├── etc/              # contains the configuration of the docker image
 │   ├── jwt/              # secrets for generating jwt tokens - DO NOT COMMIT these secrets
 │   ├── packages/         # configure packages - see: config/README.md
-│   ├── secrets/          # symfony secrets store - DO NOT COMMIT these secrets
-│   ├── services/         # contains some default overrides
-│   ├── services.xml      # just imports the default overrides - this file should not change
-│   └── services_test.xml # just imports the default overrides for tests
+│   ├── services.xml      # service definition overrides
+│   └── services_test.xml # overrides for test env
 ├── custom                # contains custom files
-│   ├── plugins           # store plugins
-│   ├── static-plugins    # static project specific plugins
-├── docker-compose.yml    # example docker-compose
-├── Dockerfile            # minimal docker image
+│   ├── plugins           # custom plugins
+├── devops/               # containers, runtime runner. See: ./devops/README.md 
+├── docker-compose.yml    # docker-compose
 ├── phpunit.xml.dist      # phpunit config
 ├── public                # should be the web root
 │   ├── index.php         # main entrypoint for the web application
 ├── README.md             # this file
 ├── src
 │   ├── Command/*
+│   ├── Migrations/*      # NBB custom: added to store Core migrations, which are needed to prepare core of the shop or change it's data
 │   ├── Kernel.php        # our kernel extension
 │   └── TestBootstrap.php # required to run unit tests
+├── vendor/               # this folder in actual state ONLY inside the container and supposed to be used there only. in ./bin/run.sh there available command 'vendors-sync' to sync it into host machine
 └── var
-    ├── log/              # log dir
-    |── cache/            # cache directory for symfony
-    └── plugins.json      # javascript build configuration
+    ├── log/              # log dir (only visible inside container, folder is mounted into tmpsf)
+    |── cache/            # cache directory for symfony (only visible inside container, folder is mounted into tmpsf)
+    |── data/             # on dev env contains data from other services, e.g ES/mysql
+    └── plugins.json
 ```
 
-## Managing Dependencies
+### 6. Configuration
 
-### Composer
+See [config/README.md](config/README.md)
 
-You only need to require the things you want. If you only want to run shopware 6 in headless mode, your composer.json could look like this:
+### 7. Fixtures
 
-```json
-{
-    "name": "acme/shopware-production",
-    "type": "project",
-    "license": "MIT",
-    "config": {
-        "optimize-autoloader": true
-    },
-    "prefer-stable": true,
-    "minimum-stability": "stable",
-    "autoload": {
-        "psr-4": {
-            "Shopware\\Production\\": "src/"
-        }
-    },
-    "require": {
-        "php": "~7.2",
-        "ocramius/package-versions": "1.4.0",
-        "shopware/core": "~v6.1.0"
-    }
-}
-```
-
-### Require project plugins
-
-If you have project specific plugins, place them under `custom/static-plugins/{YourPlugin}` and require them in your `composer.json`.
-
-Note: The plugins needs a (stable) version to work with the default stability `stable`.
-
+To add database fixtures please launch:
 ```bash
-composer require "exampleorg/myplugin"
+bin/console framework:demodata --env=prod
+bin/console dal:refresh:index --env=prod 
 ```
 
-External plugins in private repositories can also be required by adding the repository to your composer.json.
+# Commonly asked questions:
 
-See [Using private repositories](https://getcomposer.org/doc/05-repositories.md#using-private-repositories)
+> # WARNING!!!
+>
+> Answers relevant for dev env. `You must undestand what you are doing`, because some actions might lead to data loose.
+>
+> In case if you have doubts, ask your team mates or Oleksii Chernomaz
 
-### Update shopware packages
+## I see DB issue after successfull startup, it worked before
 
-Run the following command, to update all shopware dependencies:
-```bash
-composer update "shopware/*"
-```
-
-# Deployment
-
-## Docker
-
-The `DOCKERFILE` and docker-compose.yml service definitions should work but are still experimental.
-
-
-## Storage and caches
-
-The following directories should be shared by all app servers:
-
-```txt
-.
-├── config
-│   ├── jwt # ro - should be written on first deployment
-│   ├── secrets # rw shared - see, if you want to use it: https://symfony.com/blog/new-in-symfony-4-4-encrypted-secrets-management 
-├── public
-│   ├── bundles # rw shared - Written by `assets:install` / `theme:compile`, can also be initiated by the administration
-│   ├── media # rw shared
-│   ├── theme # rw shared - generated themes by `theme:compile/change`
-│   └── thumbnail # rw shared - media thumbnails
-│   └── sitemap # rw shared - generated sitemaps
-├── var
-│   ├── cache # rw local - contains the containers, which contains additional cache directories (twig, translations, etc)
-│   ├── log # a - append only, can be change in the monlog config
-
-ro - Readonly after deployment
-rw shared - read and write access, it should be shared across the app servers
-rw local - locale read and write access
-```
-
-Some of these directories like `public` can also be changed to different flysystem to host the files on s3 for example.
+* Usually it's caused because of the DB version update. If it was the case, remove db folder from ./var/data . Or take care about data migration.
+* Another issue, you have changed stack or removed mounted folders (e.g no docker-override file). 
+By this you change went into incinsistent state: application thinks that it's installed, but DB is not prepared and empty. Recreate db: just remove install.lock, rebuild again and start stack

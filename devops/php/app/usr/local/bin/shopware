@@ -1,0 +1,154 @@
+#!/usr/bin/env sh
+
+# a wrapper for the commands to help in work experience with shopware and reduce amount of documentation for it
+# note that commands MUST be executed IN the context of the project's workspace and INSIDE the container
+# also some commands are safe to be executed during image building process
+(
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    NC='\033[0m' # No Color
+
+    script_dir=$(ABSOLUTE_PATH="$( cd "$( dirname "$0" )" && pwd -P )"; RELATIVE_PATH=$(dirname "$(readlink "$0")"); cd "${ABSOLUTE_PATH}/${RELATIVE_PATH}" && pwd -P)
+    jwt_keys_dir="${PWD}/config/jwt/";
+
+    echo -e "${YELLOW}Executing command '${1}'${NC}";
+    case "${1}" in
+        clean)
+            mkdir -p ./var/cache ./var/log ./var/queue \
+                && rm -rf ./var/cache/* ./var/log/* ./var/queue/* \
+                && chmod -R a+w ./var/cache ./var/log ./var/queue \
+                && echo "${GREEN}    -> Cache / log / queue folders in the project are cleaned up${NC}"
+        ;;
+        jwt:generate)
+            JWT_PRIVATE_KEY_PASSPHRASE=${JWT_PRIVATE_KEY_PASSPHRASE:-'default_password_asdaldkqnj324j5qwosalKDFNXC_FROM_shopwarehelper'}
+            if [ ! -f ${jwt_keys_dir}private.pem ]; then
+                echo "${YELLOW} Generate JWT keys with passphrase '${JWT_PRIVATE_KEY_PASSPHRASE}' in folder '${jwt_keys_dir}' ${NC}" \
+                && openssl genpkey \
+                    -out ${jwt_keys_dir}private.pem \
+                    -pass pass:"${JWT_PRIVATE_KEY_PASSPHRASE}"\
+                    -aes256 \
+                    -algorithm rsa \
+                    -pkeyopt rsa_keygen_bits:4096 \
+                && openssl pkey -passin "pass:${JWT_PRIVATE_KEY_PASSPHRASE}" -in ${jwt_keys_dir}private.pem -out ${jwt_keys_dir}public.pem -pubout \
+                && chown www-data:www-data ${jwt_keys_dir}* \
+                && chmod 0600 ${jwt_keys_dir}* \
+                && echo  echo "${GREEN}    -> JWT keys created in ${jwt_keys_dir} ${NC}:" \
+                && ls -l ${jwt_keys_dir}*
+            else
+                echo  echo "${GREEN}    -> JWT keys already available in '${jwt_keys_dir}', use them or move out from folder or use command 'shopware jwt:re-generate' to force process and remove ${NC}:" \
+                    && ls -l ${jwt_keys_dir}*
+            fi;
+        ;;
+        jwt:re-generate)
+            rm ./config/jwt/* \
+            && ${script_dir}/shopware jwt:generate
+        ;;
+        # build shopware php
+        build:shopware-core)
+            # warning, vendor directory "ezyang" folder have to be writable, because of some extensions needs a write access to FS
+            # it will be fixed in newer versions of the library: see thread in github
+            (
+                export export INSTALL=1 \
+                && ${script_dir}/shopware clean \
+                    && export PROJECT_ROOT="${PWD}/" \
+                    && ${script_dir}/shopware jwt:generate \
+                    && composer install --no-interaction --optimize-autoloader --no-suggest \
+                    && composer install -d ./vendor/shopware/recovery --no-interaction --optimize-autoloader --no-suggest \
+                    && echo "${GREEN}   -> Build is finished${NC}"
+            )
+        ;;
+        # build shopware runtime dependent part (migrations and frontend)
+        build:shopware-runtime)
+            # warning, vendor directory "ezyang" folder have to be writable, because of some extensions needs a write access to FS
+            # it will be fixed in newer versions of the library: see thread in github
+            (
+                export export INSTALL=1 \
+                && ([ ! -f "./install.lock" ] && bin/console system:install --create-database --basic-setup || true ) \
+                && ${script_dir}/shopware apply-migrations \
+                && ${script_dir}/shopware build:assets
+            )
+        ;;
+        # building frontend
+        build:assets)
+            # build JS and admin. Note, this step needs DB connection
+            (
+                export INSTALL=1 \
+                && export PROJECT_ROOT="${PWD}/" \
+                && ${script_dir}/shopware init-plugins \
+                && bin/console theme:compile \
+                && ./bin/build-js.sh \
+                && echo "${GREEN}   -> JS Build is finished${NC}"
+            )
+        ;;
+        storefront-watch)
+            (
+                export PROJECT_ROOT="${PWD}/" \
+                && bin/console theme:compile \
+                ./bin/watch-storefront.sh
+            )
+        ;;
+        apply-migrations)
+                ./bin/console database:migrate -n --all \
+                && echo "${GREEN}   -> Migrations are applied${NC}"
+        ;;
+        init-plugins)
+            ## MainTheme activation & configuration, smth like:
+            #bin/console plugin:install --activate MainTheme
+            #bin/console theme:change MainTheme --all
+        ;;
+        upgrade)
+            # here chained all commands, which have to be executed to make shopware upgrade. In case if smth goes wrong
+            # do not forget to refer to the cocumentation
+            bin/console system:update:prepare \
+                && php -d 'memory_limit=-1' /usr/bin/composer update shopware/* \
+                && bin/console system:update:finish \
+                && echo "${GREEN}Core upgrade is finished.${NC}
+                     ${YELLOW}Check outputs and shop itself, commit changes (if needed add files in gitignore) and,${NC}
+                     ${RED}Do NOT forget to rebuild a docker image${NC} To do so, you need to go outside container, and
+                     use a './bin/run.sh [build]' command to recreate stack. Refer to the help or readme file [./bin/README.md]
+                ";
+        ;;
+        *)
+            echo -e "${YELLOW}Shopware runtime helper${NC} ###################################################################################
+                Designed to be executed on the runtime (e.g inside the container)
+                Use it from project's workspace. This helper operates relatively to the CWD.
+
+                ${YELLOW}Commands list:${NC}
+                    ${GREEN} help ${NC}                     - Shows this message. Also help will be shown if you type unknown command (${RED}Safe for any environments${NC})
+                    ${GREEN} clean ${NC}                    - Clean up runtime environment from caches, logs and queue files (${RED}For local and CI/CD usage only${NC})
+                                                              This command also executed automatically during '${YELLOW}build${NC}' command execution
+                    ${GREEN} jwt:generate ${NC}             - Generates a new public and private keys pair if none available in the ${jwt_keys_dir}
+                    ${GREEN} jwt:re-generate ${NC}          - Regenerates pair of private/public keys. Removes currently available keys from the folder '${jwt_keys_dir}'
+                                                              It will remove current keys in the folder ${jwt_keys_dir}, so that ${RED}not safe for prod usage${NC}
+                    ${GREEN} build:shopware-core ${NC}      - Makes installation of the php -d 'memory_limit=-1' /usr/bin/composer dependencies, and prepare shopware.
+                                                              This command in most cases is needed for application build purposes,
+                                                              Can be used from dockerfile during image build process
+                                                              so that you can see it's usage in the Dockerfile for example.(${RED}For local and CI/CD usage only${NC})
+                    ${GREEN} build:shopware-runtime ${NC}   - Executed on runtime and finzlises application build process (assets, DB setup). Thing is that not all the thins possible
+                                                              to build directly in dockerfile, because runtime env required (like DB, settings, so on)
+                    ${GREEN} build:assets ${NC}             - Builds JS part of the application. Might need first to
+                                                              have executed '${YELLOW}build${NC}' command before, because can rely on the assets,
+                                                              produced during build phase. (${RED}For local and CI/CD usage only${NC})
+                    ${GREEN} storefront-watch ${NC}         - Builds assets for the frontend part of the application and watches for changes in your js files. Unfortunately
+                                                              there is no watch command available to build SCSS files. You need to execute 'bin/console theme:compile' after each
+                                                              change.
+                    ${GREEN} apply-migrations ${NC}         - Used to apply all the migrations on the shop, both global migrations and
+                                                              plugin migrations. Also when needed will create a database (if you did not
+                                                              have any). (${RED}For local, CI/CD usage. On Prod system must be executed as post-deployment task${NC}).
+                    ${GREEN} init-plugins ${NC}             - Installs and activates plugins
+                    ${GREEN} upgrade ${NC}                  - Tries to make a shopware core upgrade. ${RED}For local usage only${NC}.
+                                                              Never run this command in the CI/CD pipelines. After you make upgrade,
+                                                              database can be changed with migrations, as well as can be changed structure
+                                                              and plugins might stop to work, so on.
+
+                                                              After every upgrade, developer has to:
+                                                                - test briefly shop and run the tests there,
+                                                                - Review changes after upgrade, if needed extend gitignore file,
+                                                                - manually commit changes,
+                                                                - rebuild container to ensure that all still works,
+                                                                - ask QA team to recheck main functionality before going on prod
+            "
+        ;;
+    esac;
+)

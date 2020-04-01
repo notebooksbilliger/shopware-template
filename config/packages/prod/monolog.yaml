@@ -1,0 +1,19 @@
+monolog:
+    handlers:
+        filter_errors:
+            type: fingers_crossed
+            action_level: error
+            handler: standard_error
+            channels: ["!event", "!console"]
+        standard_error:
+            type: stream
+            path: php://stdout
+            channels: ["!event", "!console"]
+            formatter: 'monolog.formatter.json'
+        console:
+            type: console
+            process_psr_3_messages: false
+            channels: ["!event", "!console"]
+        newrelic:
+            type: newrelic
+            level: critical

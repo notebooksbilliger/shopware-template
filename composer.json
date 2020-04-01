@@ -41,12 +41,34 @@
     ],
     "require": {
         "php": "~7.2",
+        "ext-tokenizer": "*",
+        "ext-xmlwriter": "*",
+        "ext-openssl": "*",
+        "ext-dom": "*",
+        "ext-fileinfo": "*",
+        "ext-gd": "*",
+        "ext-iconv": "*",
+        "ext-intl": "*",
+        "ext-json": "*",
+        "ext-libxml": "*",
+        "ext-mbstring": "*",
+        "ext-pcre": "*",
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*",
+        "ext-phar": "*",
+        "ext-simplexml": "*",
+        "ext-xml": "*",
+        "ext-zip": "*",
+        "ext-zlib": "*",
+        "ext-newrelic": "*",
         "ocramius/package-versions": "1.4.0",
         "shopware/core": "v6.1.*",
         "shopware/administration": "v6.1.*",
         "shopware/storefront": "v6.1.*",
         "shopware/elasticsearch": "v6.1.*",
-        "shopware/recovery": "v6.1.*"
+        "shopware/recovery": "v6.1.*",
+        "doctrine/doctrine-migrations-bundle": "^2.0",
+        "nelmio/cors-bundle": "^2.0"
     },
     "require-dev": {
         "ext-tokenizer": "*",
@@ -66,6 +88,8 @@
         "symfony/var-dumper": "~4.4",
         "symfony/web-profiler-bundle": "~4.4",
         "defuse/php-encryption": "~2.2.1",
-        "symfony/dom-crawler": "~4.4"
+        "symfony/dom-crawler": "~4.4",
+        "codeception/codeception": "^4.1",
+        "codeception/module-phpbrowser": "^1.0"
     }
 }
